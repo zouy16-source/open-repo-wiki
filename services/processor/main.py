@@ -30,6 +30,7 @@ from shared.storage.dynamodb import DynamoDBClient
 from shared.storage.s3 import S3Client
 from shared.github.client import GitHubClient, GitHubAPIError, RepoDetails, TreeResult
 from shared.github.filter import filter_tree, count_filtered_files
+from shared.source import create_source_client, file_url_pattern as compute_file_url_pattern
 
 # Import LLM integration
 from services.processor.llm import LLMFactory, LLMConfig, LLMProvider
@@ -89,7 +90,11 @@ class ProcessorConfig:
     ddb_main_table: str
     ddb_jobs_table: str
     s3_bucket: str
-    github_token: str
+    provider: str
+    token: str
+    source_base_url: Optional[str]
+    file_url_pattern: str
+    output_language: str
     aws_region: str
     max_file_limit: int
 
@@ -116,19 +121,36 @@ class ProcessorConfig:
         """
         required_vars = [
             "REPO_OWNER",
-            "REPO_NAME", 
+            "REPO_NAME",
             "JOB_ID",
             "TASK_TOKEN",
             "DDB_MAIN_TABLE",
             "DDB_JOBS_TABLE",
             "S3_BUCKET",
-            "GITHUB_TOKEN",
         ]
-        
+
         missing = [var for var in required_vars if not os.environ.get(var)]
         if missing:
             raise ValueError(f"Missing required environment variables: {', '.join(missing)}")
-        
+
+        # Source provider selection (github | gitlab) and its access token.
+        provider = os.environ.get("REPO_PROVIDER", "github").strip().lower()
+        if provider == "gitlab":
+            token = os.environ.get("GITLAB_TOKEN", "")
+            token_var = "GITLAB_TOKEN"
+            source_base_url = os.environ.get("GITLAB_URL")
+        elif provider == "github":
+            token = os.environ.get("GITHUB_TOKEN", "")
+            token_var = "GITHUB_TOKEN"
+            source_base_url = None
+        else:
+            raise ValueError(
+                f"Unsupported REPO_PROVIDER: {provider!r} (expected 'github' or 'gitlab')"
+            )
+
+        if not token:
+            raise ValueError(f"Missing required environment variables: {token_var}")
+
         return cls(
             repo_owner=os.environ["REPO_OWNER"],
             repo_name=os.environ["REPO_NAME"],
@@ -138,7 +160,11 @@ class ProcessorConfig:
             ddb_main_table=os.environ["DDB_MAIN_TABLE"],
             ddb_jobs_table=os.environ["DDB_JOBS_TABLE"],
             s3_bucket=os.environ["S3_BUCKET"],
-            github_token=os.environ["GITHUB_TOKEN"],
+            provider=provider,
+            token=token,
+            source_base_url=source_base_url,
+            file_url_pattern=compute_file_url_pattern(provider, source_base_url),
+            output_language=os.environ.get("OUTPUT_LANGUAGE", "zh").strip().lower(),
             aws_region=os.environ.get("AWS_REGION", "us-east-1"),
             max_file_limit=int(os.environ.get("MAX_FILE_LIMIT", "1000")),
         )
@@ -180,7 +206,10 @@ class RepositoryProcessor:
             bucket_name=config.s3_bucket,
             region_name=config.aws_region,
         )
-        self.github = GitHubClient(token=config.github_token)
+        # Source read client (GitHub or GitLab) chosen by config.provider.
+        self.github = create_source_client(
+            config.provider, config.token, base_url=config.source_base_url
+        )
         
         # Step Functions client for callback
         self.sfn_client = boto3.client(
@@ -389,6 +418,8 @@ class RepositoryProcessor:
             s3_client=self.s3,
             job_id=self.config.job_id,
             llm_provider=self.llm_provider,
+            file_url_pattern=self.config.file_url_pattern,
+            language=self.config.output_language,
         )
         
         try:

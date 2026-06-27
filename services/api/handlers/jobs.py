@@ -94,21 +94,24 @@ def _validate_owner_repo(owner: str, repo: str) -> None:
     if not repo or not isinstance(repo, str):
         raise APIError("INVALID_INPUT", "Missing or invalid 'repo' field", 400)
     
-    # Validate format (alphanumeric, hyphens, underscores, dots)
+    # Validate format (alphanumeric, hyphens, underscores, dots).
+    # The repo may contain '/' to support GitLab nested groups
+    # (group/subgroup/project); each segment is validated individually.
     owner_pattern = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]*$")
-    repo_pattern = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]*$")
-    
+    repo_pattern = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]*(?:/[a-zA-Z0-9][a-zA-Z0-9_.-]*)*$")
+
     if not owner_pattern.match(owner) or len(owner) > 39:
         raise APIError(
             "INVALID_INPUT",
             "Invalid 'owner' format. Must be alphanumeric with hyphens/underscores/dots, max 39 chars",
             400,
         )
-    
-    if not repo_pattern.match(repo) or len(repo) > 100:
+
+    if not repo_pattern.match(repo) or len(repo) > 200:
         raise APIError(
             "INVALID_INPUT",
-            "Invalid 'repo' format. Must be alphanumeric with hyphens/underscores/dots, max 100 chars",
+            "Invalid 'repo' format. Alphanumeric with hyphens/underscores/dots "
+            "(slashes allowed for GitLab subgroups), max 200 chars",
             400,
         )
 

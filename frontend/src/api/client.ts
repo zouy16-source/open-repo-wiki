@@ -161,14 +161,14 @@ export async function getTree(
   branch: string,
   path: string
 ): Promise<TreeNode[]> {
-  // Split repoId into owner/name for proper URL structure
-  const [owner, name] = repoId.split('/');
-  
+  // Encode each segment but keep slashes (supports GitLab nested groups)
+  const encodedRepo = repoId.split('/').map(encodeURIComponent).join('/');
+
   // Build query string manually - don't encode slashes in path (API Gateway limitation)
   const queryString = `branch=${encodeURIComponent(branch)}&path=${path}`;
-  
+
   const response = await fetch(
-    `${API_BASE_URL}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/tree?${queryString}`,
+    `${API_BASE_URL}/repos/${encodedRepo}/tree?${queryString}`,
     {
       method: 'GET',
     }
@@ -200,14 +200,14 @@ export async function getPage(
   branch: string,
   path: string
 ): Promise<PageContent> {
-  // Split repoId into owner/name for proper URL structure
-  const [owner, name] = repoId.split('/');
-  
+  // Encode each segment but keep slashes (supports GitLab nested groups)
+  const encodedRepo = repoId.split('/').map(encodeURIComponent).join('/');
+
   // Build query string manually - don't encode slashes in path (API Gateway limitation)
   const queryString = `branch=${encodeURIComponent(branch)}&path=${path}`;
-  
+
   const response = await fetch(
-    `${API_BASE_URL}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/page?${queryString}`,
+    `${API_BASE_URL}/repos/${encodedRepo}/page?${queryString}`,
     {
       method: 'GET',
     }

@@ -30,19 +30,23 @@ function HomePage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = async (owner: string, repo: string) => {
+  const handleSubmit = async (repoId: string, branch: string) => {
     setIsLoading(true);
     setError(null);
 
+    const branchParam = branch || 'main';
+    // owner = first segment, repo = the rest (supports GitLab nested groups)
+    const [owner, ...rest] = repoId.split('/');
+    const repo = rest.join('/');
     try {
-      const result = await createJob(owner, repo);
-      
+      const result = await createJob(owner, repo, branch);
+
       if (result.status === 'completed') {
         // Job already completed - go directly to result page
-        navigate(`/${owner}/${repo}`);
+        navigate(`/${repoId}?branch=${encodeURIComponent(branchParam)}`);
       } else {
         // New or in-progress job - go to processing page
-        navigate(`/processing/${result.jobId}?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}`);
+        navigate(`/processing/${result.jobId}?repoId=${encodeURIComponent(repoId)}&branch=${encodeURIComponent(branchParam)}`);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create job');
@@ -62,11 +66,14 @@ function ProcessingPage() {
   const { jobId } = useParams<{ jobId: string }>();
   const [searchParams] = useSearchParams();
 
-  const owner = searchParams.get('owner') || '';
-  const repo = searchParams.get('repo') || '';
+  // repoId may be nested (group/subgroup/project); derive owner/repo for display.
+  const repoId = searchParams.get('repoId') || '';
+  const segments = repoId.split('/').filter(Boolean);
+  const repo = segments[segments.length - 1] || '';
+  const owner = segments.slice(0, -1).join('/');
 
-  const handleComplete = useCallback((repoId: string, branch: string) => {
-    navigate(`/${repoId}?branch=${encodeURIComponent(branch)}`);
+  const handleComplete = useCallback((completedRepoId: string, branch: string) => {
+    navigate(`/${completedRepoId}?branch=${encodeURIComponent(branch)}`);
   }, [navigate]);
 
   const handleError = useCallback((error: string) => {
@@ -98,23 +105,32 @@ function ProcessingPage() {
  */
 function RepoPage() {
   const navigate = useNavigate();
-  const { owner, repo } = useParams<{ owner: string; repo: string }>();
+  const params = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
+
+  // Route is "/:owner/*", so the repo id can be any depth (GitLab nested groups).
+  const ownerSeg = params.owner || '';
+  const restSeg = params['*'] || '';
+  const repoId = restSeg ? `${ownerSeg}/${restSeg}` : ownerSeg;
+
+  const segments = repoId.split('/').filter(Boolean);
+  const repoName = segments[segments.length - 1] || '';
+  const ownerPath = segments.slice(0, -1).join('/');
 
   const branch = searchParams.get('branch') || 'main';
   const currentPath = searchParams.get('path') || '';
 
   // Create a synthetic root node for initial display
   const createRootNode = useCallback((): TreeNode | null => {
-    if (!repo) return null;
+    if (!repoName) return null;
     return {
       type: 'folder',
-      name: repo,
+      name: repoName,
       path: '',
       parentPath: '',
       hasSummary: true
     };
-  }, [repo]);
+  }, [repoName]);
 
   // Initialize with root node if no path is specified
   const [selectedNode, setSelectedNode] = useState<TreeNode | null>(() => {
@@ -125,8 +141,6 @@ function RepoPage() {
     return null;
   });
   const [repoSummary] = useState<string | undefined>(undefined);
-
-  const repoId = `${owner}/${repo}`;
 
   // Update selected node when URL path changes
   useEffect(() => {
@@ -164,7 +178,7 @@ function RepoPage() {
     console.log('Expand request for:', node.path);
   }, []);
 
-  if (!owner || !repo) {
+  if (!repoId || !repoId.includes('/')) {
     navigate('/');
     return null;
   }
@@ -172,8 +186,8 @@ function RepoPage() {
   return (
     <div className="h-screen bg-white flex flex-col overflow-hidden">
       <Breadcrumb
-        owner={owner}
-        repo={repo}
+        owner={ownerPath}
+        repo={repoName}
         currentPath={currentPath}
         onNavigate={handleNavigate}
         onGoToRoot={handleGoToRoot}
@@ -212,7 +226,7 @@ function App() {
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/processing/:jobId" element={<ProcessingPage />} />
-        <Route path="/:owner/:repo" element={<RepoPage />} />
+        <Route path="/:owner/*" element={<RepoPage />} />
       </Routes>
     </BrowserRouter>
   );

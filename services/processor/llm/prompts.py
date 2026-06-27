@@ -6,8 +6,28 @@ Requirements: 5.6, 5.7
 """
 
 
+# Blob-URL templates the LLM is instructed to use when linking code.
+# The model fills in {owner}/{repo}/{commitSha}/{path}/{lineStart}/{lineEnd}.
+GITHUB_FILE_URL_PATTERN: str = (
+    "https://github.com/{owner}/{repo}/blob/{commitSha}/{path}#L{lineStart}-L{lineEnd}"
+)
+
+
+def gitlab_file_url_pattern(base_url: str = "https://gitlab.com") -> str:
+    """GitLab blob-URL template (note the '/-/blob/' segment and '#L1-2' anchor)."""
+    return (
+        base_url.rstrip("/")
+        + "/{owner}/{repo}/-/blob/{commitSha}/{path}#L{lineStart}-{lineEnd}"
+    )
+
+
+# Placeholder inside the prompt bodies, swapped for the provider pattern by
+# code_prompt() / folder_prompt() below.
+_FILE_URL_SENTINEL: str = "<<FILE_URL_PATTERN>>"
+
+
 CODE_PROMPT: str = """
-You are an expert software engineer and your task is to deeply analyze a provided codebase from a GitHub repository. Your goal is to generate a comprehensive and structured summary of the codebase that is suitable for a developer-friendly wiki page in markdown format but without backticks.
+You are an expert software engineer and your task is to deeply analyze a provided codebase from a code repository. Your goal is to generate a comprehensive and structured summary of the codebase that is suitable for a developer-friendly wiki page in markdown format but without backticks.
 
 **Input:**
 
@@ -29,7 +49,7 @@ You will receive the following information, extracted from a GitHub repository:
 *   Explain its role in the overall system.
 *   Identify its dependencies on other modules/components.
 *   Highlight any important classes, functions, or data structures.
-*   Link all the code blocks (Class,Function,Enum,Exception) that are referenced using the following markdown link format: [`Description of Code Block`](Full github url of the file including the start line with optional ending line#L{startLine}-L{endLine}). This is in the form of "https://github.com/{owner}/{repo}/blob/{commitSha}/{path}#L{lineStart}-L{lineEnd}".
+*   Link all the code blocks (Class,Function,Enum,Exception) that are referenced using the following markdown link format: [`Description of Code Block`](Full url of the file including the start line with optional ending line#L{startLine}-L{endLine}). This is in the form of "<<FILE_URL_PATTERN>>".
 2. **Code-Level Insights:**
 *   Analyze the code files to understand the implementation details.
 *   Identify core algorithms, data structures, and design patterns used.
@@ -43,7 +63,7 @@ You will receive the following information, extracted from a GitHub repository:
 
 
 FOLDER_PROMPT: str = """
-You are an expert software engineer and your task is to deeply analyze a provided codebase from a GitHub repository. Your goal is to generate a comprehensive and structured summary of the codebase that is suitable for a developer-friendly wiki page in markdown format but without backticks.
+You are an expert software engineer and your task is to deeply analyze a provided codebase from a code repository. Your goal is to generate a comprehensive and structured summary of the codebase that is suitable for a developer-friendly wiki page in markdown format but without backticks.
 
 **Input:**
 
@@ -68,7 +88,7 @@ You will receive the following information, summarized from the expert software 
 *   Explain its role in the overall system.
 *   Identify its dependencies on other modules/components/folder.
 *   Highlight any important classes, functions, or data structures in it's sub-files and sub-folders.
-*   Link all the code blocks that are referenced using the following markdown link format: [`Description of Code Block`](Full github url of the file including the start line with optional ending line#L{startLine}-L{endLine}). This is in the form of "https://github.com/{owner}/{repo}/blob/{commitSha}/{path}#L{lineStart}-L{lineEnd}".
+*   Link all the code blocks that are referenced using the following markdown link format: [`Description of Code Block`](Full url of the file including the start line with optional ending line#L{startLine}-L{endLine}). This is in the form of "<<FILE_URL_PATTERN>>".
 
 2. **Dependencies and Relationships:**
 *   Clearly document the relationships between different folders and files.
@@ -110,3 +130,55 @@ The commit SHA referenced is {commit_sha}
 The path of the folder is {path}
 Below are the summaries for the codebase:
 {ai_summaries}"""
+
+
+# Default output language for generated summaries.
+DEFAULT_LANGUAGE: str = "zh"
+
+_ZH_ALIASES = {"zh", "zh-cn", "zh_cn", "chinese", "cn", "中文"}
+
+
+def _language_directive(language: str, *, graph_note: bool) -> str:
+    """Instruction forcing the prose output into the target language.
+
+    Returns an empty string for English (the prompts are already English).
+    The dependency graph is always kept English/structural.
+    """
+    lang = (language or DEFAULT_LANGUAGE).strip().lower()
+    if lang not in _ZH_ALIASES:
+        return ""
+    directive = (
+        "\n\n**Output language:** Write the `usage` and `summary` text in "
+        "Simplified Chinese (简体中文). Keep all code identifiers, class / function / "
+        "variable names, file paths, and URLs exactly as-is — do NOT translate or "
+        "alter them."
+    )
+    if graph_note:
+        directive += (
+            " For the Mermaid dependency graph, keep BOTH the node identifiers and the "
+            "edge labels in English / structural form (e.g. \"uses\", \"provides config "
+            "to\") — do not translate the graph."
+        )
+    return directive
+
+
+def code_prompt(
+    file_url_pattern: str = GITHUB_FILE_URL_PATTERN,
+    language: str = DEFAULT_LANGUAGE,
+) -> str:
+    """CODE_PROMPT with the blob-URL pattern and output-language directive applied."""
+    return (
+        CODE_PROMPT.replace(_FILE_URL_SENTINEL, file_url_pattern)
+        + _language_directive(language, graph_note=False)
+    )
+
+
+def folder_prompt(
+    file_url_pattern: str = GITHUB_FILE_URL_PATTERN,
+    language: str = DEFAULT_LANGUAGE,
+) -> str:
+    """FOLDER_PROMPT with the blob-URL pattern and output-language directive applied."""
+    return (
+        FOLDER_PROMPT.replace(_FILE_URL_SENTINEL, file_url_pattern)
+        + _language_directive(language, graph_note=True)
+    )

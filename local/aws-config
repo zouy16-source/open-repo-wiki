@@ -1,0 +1,7 @@
+# Mounted into the containers via AWS_CONFIG_FILE.
+# Forces S3 path-style addressing so the S3 client works against LocalStack
+# over the docker network (http://localstack:4566/<bucket>/<key>).
+[default]
+region = us-east-1
+s3 =
+    addressing_style = path

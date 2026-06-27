@@ -30,6 +30,7 @@ from services.processor.llm import (
     FileSchema,
     FolderSchema,
 )
+from services.processor.llm.prompts import GITHUB_FILE_URL_PATTERN, DEFAULT_LANGUAGE
 
 
 logger = logging.getLogger(__name__)
@@ -78,28 +79,39 @@ class SummarizeStage:
         s3_client: S3Client,
         job_id: str,
         llm_provider: Optional[LLMProvider] = None,
+        file_url_pattern: Optional[str] = None,
+        language: Optional[str] = None,
     ):
         """Initialize the summarization stage.
-        
+
         Args:
-            github_client: GitHub API client for fetching file content.
+            github_client: Source API client (GitHub or GitLab) for fetching file content.
             dynamodb_client: DynamoDB client for storing tree nodes.
             s3_client: S3 client for storing large summaries.
             job_id: Job identifier for progress updates.
             llm_provider: LLM provider for generating summaries (optional).
+            file_url_pattern: Blob-URL template for the source provider
+                (defaults to the GitHub pattern).
+            language: Output language for generated summaries (defaults to Chinese).
         """
         self.github = github_client
         self.dynamodb = dynamodb_client
         self.s3 = s3_client
         self.job_id = job_id
         self.llm_provider = llm_provider
-        
+        self.file_url_pattern = file_url_pattern or GITHUB_FILE_URL_PATTERN
+        self.language = language or DEFAULT_LANGUAGE
+
         # Initialize processors if LLM provider is available
         self.code_processor: Optional[CodeProcessor] = None
         self.folder_processor: Optional[FolderProcessor] = None
         if llm_provider:
-            self.code_processor = CodeProcessor(llm_provider)
-            self.folder_processor = FolderProcessor(llm_provider)
+            self.code_processor = CodeProcessor(
+                llm_provider, file_url_pattern=self.file_url_pattern, language=self.language
+            )
+            self.folder_processor = FolderProcessor(
+                llm_provider, file_url_pattern=self.file_url_pattern, language=self.language
+            )
         
         # Semaphore to limit concurrent GitHub/LLM requests
         self.semaphore = asyncio.Semaphore(20)

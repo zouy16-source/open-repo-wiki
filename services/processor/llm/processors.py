@@ -13,8 +13,10 @@ from services.processor.llm.provider import LLMProvider
 from services.processor.llm.schema import FileSchema, FolderSchema, SchemaParser
 from services.processor.llm.code_splitter import CodeSplitter
 from services.processor.llm.prompts import (
-    CODE_PROMPT,
-    FOLDER_PROMPT,
+    GITHUB_FILE_URL_PATTERN,
+    DEFAULT_LANGUAGE,
+    code_prompt,
+    folder_prompt,
     FILE_PROMPT_TEMPLATE,
     FOLDER_PROMPT_TEMPLATE,
 )
@@ -87,17 +89,28 @@ class CodeProcessor(BaseProcessor):
     Requirements: 5.6
     """
 
-    def __init__(self, llm: LLMProvider, chunk_size: int = 50, chunk_overlap: int = 10):
+    def __init__(
+        self,
+        llm: LLMProvider,
+        chunk_size: int = 50,
+        chunk_overlap: int = 10,
+        file_url_pattern: str = GITHUB_FILE_URL_PATTERN,
+        language: str = DEFAULT_LANGUAGE,
+    ):
         """Initialize the code processor.
-        
+
         Args:
             llm: LLM provider instance.
             chunk_size: Lines per chunk for code splitting.
             chunk_overlap: Overlapping lines between chunks.
+            file_url_pattern: Blob-URL template for the source provider.
+            language: Output language for the generated summary.
         """
         super().__init__(llm)
         self.code_splitter = CodeSplitter(chunk_size, chunk_overlap)
         self.schema_parser = SchemaParser(FileSchema)
+        self.file_url_pattern = file_url_pattern
+        self.language = language
 
     async def generate(
         self,
@@ -130,7 +143,7 @@ class CodeProcessor(BaseProcessor):
         
         # Build the prompt
         prompt = FILE_PROMPT_TEMPLATE.format(
-            requirements=CODE_PROMPT,
+            requirements=code_prompt(self.file_url_pattern, self.language),
             format_instructions=self.schema_parser.format_instructions,
             repo_owner=repo_info.repo_owner,
             repo_name=repo_info.repo_name,
@@ -151,14 +164,23 @@ class FolderProcessor(BaseProcessor):
     Requirements: 5.7
     """
 
-    def __init__(self, llm: LLMProvider):
+    def __init__(
+        self,
+        llm: LLMProvider,
+        file_url_pattern: str = GITHUB_FILE_URL_PATTERN,
+        language: str = DEFAULT_LANGUAGE,
+    ):
         """Initialize the folder processor.
-        
+
         Args:
             llm: LLM provider instance.
+            file_url_pattern: Blob-URL template for the source provider.
+            language: Output language for the generated summary.
         """
         super().__init__(llm)
         self.schema_parser = SchemaParser(FolderSchema)
+        self.file_url_pattern = file_url_pattern
+        self.language = language
 
     async def generate(
         self,
@@ -185,7 +207,7 @@ class FolderProcessor(BaseProcessor):
         
         # Build the prompt
         prompt = FOLDER_PROMPT_TEMPLATE.format(
-            requirements=FOLDER_PROMPT,
+            requirements=folder_prompt(self.file_url_pattern, self.language),
             format_instructions=self.schema_parser.format_instructions,
             repo_owner=repo_info.repo_owner,
             repo_name=repo_info.repo_name,

@@ -74,23 +74,31 @@ def _get_path_param(event: dict[str, Any], param: str) -> Optional[str]:
 
 
 def _get_repo_id(event: dict[str, Any]) -> str:
-    """Extract and combine owner/name from path parameters.
-    
-    Args:
-        event: Lambda event object
-        
-    Returns:
-        Combined repo ID (owner/name)
-        
+    """Extract the repository id (owner/name) from path parameters.
+
+    Supports two shapes:
+    - ``repoId``: the full path, possibly containing slashes for GitLab nested
+      groups (group/subgroup/project); may be URL-encoded.
+    - ``owner`` + ``name``: the classic two-segment form.
+
     Raises:
-        APIError: If owner or name are missing/invalid
+        APIError: If the repo id is missing/invalid
     """
+    from urllib.parse import unquote
+
+    repo_id = _get_path_param(event, "repoId")
+    if repo_id:
+        repo_id = unquote(repo_id).strip("/")
+        if "/" not in repo_id:
+            raise APIError("INVALID_INPUT", "Invalid 'repoId' (expected owner/name)", 400)
+        return repo_id
+
     owner = _get_path_param(event, "owner")
     name = _get_path_param(event, "name")
-    
+
     if not owner or not name:
         raise APIError("INVALID_INPUT", "Missing 'owner' or 'name' in path", 400)
-        
+
     return f"{owner}/{name}"
 
 

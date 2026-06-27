@@ -1,36 +1,37 @@
 import { useState, type FormEvent } from 'react';
 
 interface RepoFormProps {
-  onSubmit: (owner: string, repo: string) => Promise<void>;
+  onSubmit: (repoId: string, branch: string) => Promise<void>;
   isLoading?: boolean;
   error?: string | null;
 }
 
+// Extract the repo path (owner/repo, any depth for GitLab nested groups) from:
+// - owner/repo  or  group/subgroup/project
+// - https://github.com/owner/repo            (optionally /tree|/blob/... or .git)
+// - https://gitlab.com/group/sub/project
+// - https://git.your-company.com/group/project/-/blob/main/file
+function parseRepoId(raw: string): string {
+  let s = raw.trim();
+  s = s.replace(/^https?:\/\/[^/]+\//, '');          // strip scheme + host
+  s = s.split('/-/')[0];                              // GitLab: path is before /-/
+  s = s.replace(/\/(blob|tree|commit|raw)\/.*$/, ''); // GitHub: strip ref path
+  s = s.replace(/\.git$/, '').replace(/^\/+|\/+$/g, '');
+  return s;
+}
+
 export function RepoForm({ onSubmit, isLoading = false, error }: RepoFormProps) {
   const [input, setInput] = useState('');
+  const [branch, setBranch] = useState('');
+
+  const repoId = parseRepoId(input);
+  const isValid = repoId.split('/').filter(Boolean).length >= 2;
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    const trimmed = input.trim();
-    if (!trimmed) return;
-
-    // Parse owner/repo format or GitHub URL
-    // Supports:
-    // - owner/repo
-    // - https://github.com/owner/repo
-    // - https://github.com/owner/repo/blob/main/...
-    const regex = /^(?:https?:\/\/(?:www\.)?github\.com\/)?([^\/]+)\/([^\/\s]+)(?:\/.*)?$/;
-    const match = trimmed.match(regex);
-
-    if (match) {
-      const [, owner, repo] = match;
-      // Strip .git suffix if present (e.g., from URLs like https://github.com/owner/repo.git)
-      const cleanedRepo = repo.endsWith('.git') ? repo.slice(0, -4) : repo;
-      await onSubmit(owner, cleanedRepo);
-    }
+    if (!isValid) return;
+    await onSubmit(repoId, branch.trim());
   };
-
-  const isValid = /^(?:https?:\/\/(?:www\.)?github\.com\/)?([^\/]+)\/([^\/\s]+)(?:\/.*)?$/.test(input.trim());
 
   return (
     <div className="bg-white min-h-screen flex flex-col">
@@ -41,7 +42,7 @@ export function RepoForm({ onSubmit, isLoading = false, error }: RepoFormProps) 
               Open Repo Wiki
             </h1>
             <p className="text-xl text-gray-500">
-              Generate documentation for any GitHub repository instantly.
+              Generate documentation for any Git repository instantly.
             </p>
           </div>
 
@@ -53,7 +54,7 @@ export function RepoForm({ onSubmit, isLoading = false, error }: RepoFormProps) 
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   className="w-full rounded-full border-gray-300 py-4 pl-6 pr-16 text-lg border outline-none focus:border-black focus:ring-0"
-                  placeholder="Enter GitHub repository (e.g., daeisbae/open-repo-wiki)"
+                  placeholder="Enter repository (e.g., owner/repo, or a GitHub/GitLab URL)"
                   style={{ boxShadow: '0 0 15px rgba(0,0,0,0.1)' }}
                   disabled={isLoading}
                 />
@@ -90,6 +91,14 @@ export function RepoForm({ onSubmit, isLoading = false, error }: RepoFormProps) 
                   )}
                 </button>
               </div>
+              <input
+                type="text"
+                value={branch}
+                onChange={(e) => setBranch(e.target.value)}
+                className="mt-3 w-full rounded-full border border-gray-300 py-2 px-6 text-sm outline-none focus:border-black focus:ring-0"
+                placeholder="Branch (optional — default: main)"
+                disabled={isLoading}
+              />
             </form>
 
             {error && (

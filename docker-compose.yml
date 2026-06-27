@@ -1,0 +1,89 @@
+# Local development stack for the OpenRepoWiki backend.
+#
+# Emulates the AWS backend on your machine using LocalStack (DynamoDB + S3).
+# Step Functions / ECS orchestration is NOT emulated; the processor is run
+# directly as a one-shot container (see local/process-repo.sh).
+#
+#   docker compose up -d            # start LocalStack + the read/status API
+#   ./local/process-repo.sh OWNER REPO [BRANCH]   # process a repo
+#
+# See local/README.md for full instructions.
+
+name: openrepowiki-local
+
+services:
+  # AWS emulator: provides DynamoDB and S3. Tables/bucket are created on
+  # startup by the init hook mounted into /etc/localstack/init/ready.d.
+  localstack:
+    image: localstack/localstack:3
+    ports:
+      - "4566:4566"
+    environment:
+      DEBUG: ${LS_DEBUG:-0}
+    volumes:
+      - "./local/init-aws.sh:/etc/localstack/init/ready.d/init-aws.sh:ro"
+
+  # Local HTTP front for the API Lambda handlers (read + job status).
+  # Listens on http://localhost:8000. The HMAC authorizer is bypassed locally.
+  # Reuses the processor image (already has boto3/aiohttp baked in) so startup
+  # is instant; the repo is mounted at /app so services/api + local/ are present.
+  api:
+    build:
+      context: .
+      dockerfile: services/processor/Dockerfile
+    image: openrepowiki-local-backend
+    depends_on:
+      localstack:
+        condition: service_healthy
+    working_dir: /app
+    entrypoint: ["python", "local/api_server.py"]
+    environment:
+      PYTHONPATH: /app
+      PORT: "8000"
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_REGION: us-east-1
+      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_CONFIG_FILE: /app/local/aws-config
+      DYNAMODB_ENDPOINT_URL: http://localstack:4566
+      S3_ENDPOINT_URL: http://localstack:4566
+      DDB_MAIN_TABLE: OpenRepoWikiMain
+      DDB_JOBS_TABLE: OpenRepoWikiJobs
+      S3_BUCKET: openrepowiki-artifacts-dev
+      # STATE_MACHINE_ARN intentionally unset -> POST /jobs skips Step Functions.
+    ports:
+      - "8000:8000"
+    volumes:
+      - ".:/app"
+
+  # The repository processor (LLM summarization worker). Run on demand:
+  #   ./local/process-repo.sh OWNER REPO [BRANCH]
+  # Behind the "tools" profile so it does not start with `docker compose up`.
+  processor:
+    build:
+      context: .
+      dockerfile: services/processor/Dockerfile
+    image: openrepowiki-local-backend
+    profiles: ["tools"]
+    depends_on:
+      localstack:
+        condition: service_healthy
+    environment:
+      PYTHONPATH: /app
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_REGION: us-east-1
+      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_CONFIG_FILE: /app/local/aws-config
+      DDB_MAIN_TABLE: OpenRepoWikiMain
+      DDB_JOBS_TABLE: OpenRepoWikiJobs
+      S3_BUCKET: openrepowiki-artifacts-dev
+      TASK_TOKEN: local-dummy
+    env_file:
+      - path: local/.env.local
+        required: false
+    entrypoint: ["python", "/app/local/processor_run.py"]
+    volumes:
+      - "./local:/app/local:ro"
