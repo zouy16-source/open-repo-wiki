@@ -318,6 +318,7 @@ class RepositoryProcessor:
                 forks=self.repo_details.forks,
                 language=self.repo_details.language,
                 github_url=self.repo_details.url,
+                description=self.repo_details.description,
                 created_at=datetime.now(timezone.utc).isoformat(),
             )
             self.dynamodb.put_repo(repo)

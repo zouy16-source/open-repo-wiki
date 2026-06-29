@@ -168,7 +168,8 @@ def create_job(event: dict[str, Any], context: Any) -> dict[str, Any]:
         owner = body.get("owner", "").strip()
         repo = body.get("repo", "").strip()
         branch = body.get("branch", "").strip() or "main"  # Default to main
-        
+        force = bool(body.get("force", False))  # re-generate even if already processed
+
         # Validate input
         _validate_owner_repo(owner, repo)
         
@@ -181,13 +182,14 @@ def create_job(event: dict[str, Any], context: Any) -> dict[str, Any]:
         if existing_job:
             return _build_response(200, {"jobId": existing_job.job_id, "message": "Job already in progress"})
 
-        # Check if repository already has processed data (root node exists)
-        # This is more reliable than checking job status
-        repo_id = f"{owner}/{repo}"
-        root_node = ddb_client.get_node(repo_id, branch, "")  # path="" is root
-        if root_node:
-            # Repository already processed - return completed status
-            return _build_response(200, {"jobId": "completed", "message": "Job already completed"})
+        # Check if repository already has processed data (root node exists).
+        # Skipped when force=true so the user can re-generate after new commits.
+        if not force:
+            repo_id = f"{owner}/{repo}"
+            root_node = ddb_client.get_node(repo_id, branch, "")  # path="" is root
+            if root_node:
+                # Repository already processed - return completed status
+                return _build_response(200, {"jobId": "completed", "message": "Job already completed"})
 
         # Check concurrency limit (Requirements: 10.1, 10.2)
         _check_concurrency_limit(ddb_client)

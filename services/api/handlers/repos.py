@@ -261,7 +261,118 @@ def get_page(event: dict[str, Any], context: Any) -> dict[str, Any]:
             "available": True,
             "legacy": True,
         })
-        
+
+    except APIError as e:
+        return _build_error_response(e)
+    except Exception as e:
+        print(f"Internal error: {e}")
+        return _build_error_response(
+            APIError("INTERNAL_ERROR", "An unexpected error occurred", 500)
+        )
+
+
+def list_repos(event: dict[str, Any], context: Any) -> dict[str, Any]:
+    """List all generated repositories.
+
+    GET /repos
+
+    Response:
+        200: {"repos": [{repoId, owner, name, defaultBranch, language, stars, ...}]}
+    """
+    try:
+        ddb_client = _get_dynamodb_client()
+        repos = ddb_client.list_repos()
+        return _build_response(200, {"repos": [r.to_json() for r in repos]})
+    except APIError as e:
+        return _build_error_response(e)
+    except Exception as e:
+        print(f"Internal error: {e}")
+        return _build_error_response(
+            APIError("INTERNAL_ERROR", "An unexpected error occurred", 500)
+        )
+
+
+def list_source_projects(event: dict[str, Any], context: Any) -> dict[str, Any]:
+    """List projects from the configured Git provider (for the catalog table).
+
+    GET /sources/projects?search=&page=
+
+    Currently supports GitLab (REPO_PROVIDER=gitlab). For other providers it
+    returns an empty list so the UI can fall back to the search box.
+
+    Response:
+        200: {"projects": [{pathWithNamespace, name, defaultBranch, starCount, ...}],
+              "nextPage": int|null, "provider": "gitlab"}
+    """
+    try:
+        provider = os.environ.get("REPO_PROVIDER", "github").strip().lower()
+        if provider != "gitlab":
+            return _build_response(200, {"projects": [], "nextPage": None, "provider": provider})
+
+        search = _get_query_param(event, "search", "")
+        try:
+            page = int(_get_query_param(event, "page", "1") or "1")
+        except ValueError:
+            page = 1
+
+        token = os.environ.get("GITLAB_TOKEN")
+        base_url = os.environ.get("GITLAB_URL")
+
+        import asyncio
+        import aiohttp
+        from shared.gitlab.client import GitLabClient, GitLabAPIError
+
+        # When searching, scan pages and fuzzy-match locally so the query also
+        # matches the project description (GitLab's own search only covers name/path).
+        MAX_SEARCH_SCAN = 600
+
+        async def _run():
+            client = GitLabClient(token=token, base_url=base_url)
+            try:
+                if not search:
+                    return await client.list_projects(search="", page=page)
+
+                scanned: list[dict] = []
+                p = 1
+                while p and len(scanned) < MAX_SEARCH_SCAN:
+                    batch, nxt = await client.list_projects(search="", page=p, per_page=100)
+                    scanned.extend(batch)
+                    p = nxt
+
+                q = search.lower()
+                matched = [
+                    pr for pr in scanned
+                    if q in (pr.get("pathWithNamespace") or "").lower()
+                    or q in (pr.get("name") or "").lower()
+                    or q in (pr.get("description") or "").lower()
+                ]
+                return matched, None
+            finally:
+                await client.close()
+
+        host = base_url or "https://gitlab.com"
+        try:
+            projects, next_page = asyncio.run(_run())
+        except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
+            print(f"Source provider unreachable: {e}")
+            raise APIError(
+                "SOURCE_UNREACHABLE",
+                f"无法连接到 Git 服务({host}),请检查网络 / VPN 后重试",
+                502,
+            )
+        except GitLabAPIError as e:
+            print(f"Source provider error: {e}")
+            raise APIError(
+                "SOURCE_ERROR",
+                f"Git 服务返回错误({e.status_code}),请检查 GITLAB_TOKEN / GITLAB_URL",
+                502,
+            )
+
+        return _build_response(200, {
+            "projects": projects,
+            "nextPage": next_page,
+            "provider": provider,
+        })
     except APIError as e:
         return _build_error_response(e)
     except Exception as e:

@@ -228,6 +228,40 @@ class GitLabClient:
         )
         return await self._request(url, raw=True)
 
+    async def list_projects(
+        self, search: str = "", page: int = 1, per_page: int = 30
+    ) -> Tuple[List[dict], Optional[int]]:
+        """List projects the token can access (most recently active first).
+
+        Returns (projects, next_page). Each project is a small dict suitable for
+        a listing UI. Used by the catalog/homepage table.
+        """
+        url = (
+            f"{self._api}/projects?membership=true&simple=true"
+            f"&order_by=last_activity_at&per_page={per_page}&page={max(1, page)}"
+        )
+        if search:
+            url += f"&search={quote(search)}"
+
+        data, headers = await self._request_with_headers(url)
+
+        projects = [
+            {
+                "pathWithNamespace": p.get("path_with_namespace"),
+                "name": p.get("name"),
+                "description": p.get("description"),
+                "defaultBranch": p.get("default_branch"),
+                "starCount": p.get("star_count", 0),
+                "webUrl": p.get("web_url"),
+                "lastActivityAt": p.get("last_activity_at"),
+            }
+            for p in data
+        ]
+
+        next_header = headers.get("X-Next-Page")
+        next_page = int(next_header) if next_header else None
+        return projects, next_page
+
     async def check_rate_limit(self) -> dict[str, Any]:
         """GitLab has no GitHub-style core rate-limit endpoint; return a stub."""
         return {"limit": 0, "remaining": 0, "reset": 0, "used": 0}

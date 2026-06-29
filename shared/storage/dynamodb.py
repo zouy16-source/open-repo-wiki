@@ -123,6 +123,27 @@ class DynamoDBClient:
             return Repo.from_dynamodb_item(item)
         return None
 
+    def list_repos(self) -> list[Repo]:
+        """List all generated repositories (scan Main table for META records).
+
+        Note: this is a table scan filtered to SK == "META". Fine for a modest
+        number of repos; add a GSI / catalog partition if the catalog grows large.
+        """
+        repos: list[Repo] = []
+        scan_kwargs: dict[str, Any] = {"FilterExpression": Attr("SK").eq("META")}
+        while True:
+            response = self._main_table.scan(**scan_kwargs)
+            for item in response.get("Items", []):
+                try:
+                    repos.append(Repo.from_dynamodb_item(item))
+                except (KeyError, TypeError):
+                    continue
+            last_key = response.get("LastEvaluatedKey")
+            if not last_key:
+                break
+            scan_kwargs["ExclusiveStartKey"] = last_key
+        return repos
+
     # Branch operations
 
     def put_branch(self, branch: Branch) -> None:

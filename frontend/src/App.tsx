@@ -11,7 +11,7 @@
 
 import { BrowserRouter, Routes, Route, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useState, useCallback, useEffect } from 'react';
-import { RepoForm } from './components/RepoForm';
+import { RepoTable } from './components/RepoTable';
 import { ProgressView } from './components/ProgressView';
 import { TreeBrowser, type TreeNode } from './components/TreeBrowser';
 import { PageViewer } from './components/PageViewer';
@@ -27,11 +27,12 @@ import './App.css';
  */
 function HomePage() {
   const navigate = useNavigate();
-  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [searchInput, setSearchInput] = useState('');
+  const [query, setQuery] = useState('');
+  const [searching, setSearching] = useState(false);
 
-  const handleSubmit = async (repoId: string, branch: string) => {
-    setIsLoading(true);
+  const handleGenerate = async (repoId: string, branch: string, force: boolean = false) => {
     setError(null);
 
     const branchParam = branch || 'main';
@@ -39,22 +40,79 @@ function HomePage() {
     const [owner, ...rest] = repoId.split('/');
     const repo = rest.join('/');
     try {
-      const result = await createJob(owner, repo, branch);
+      const result = await createJob(owner, repo, branch, force);
 
       if (result.status === 'completed') {
-        // Job already completed - go directly to result page
+        // Already generated - go directly to result page
         navigate(`/${repoId}?branch=${encodeURIComponent(branchParam)}`);
       } else {
-        // New or in-progress job - go to processing page
+        // New / regenerating job - go to processing page
         navigate(`/processing/${result.jobId}?repoId=${encodeURIComponent(repoId)}&branch=${encodeURIComponent(branchParam)}`);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create job');
-      setIsLoading(false);
     }
   };
 
-  return <RepoForm onSubmit={handleSubmit} isLoading={isLoading} error={error} />;
+  const handleView = useCallback((repoId: string, branch: string) => {
+    navigate(`/${repoId}?branch=${encodeURIComponent(branch || 'main')}`);
+  }, [navigate]);
+
+  return (
+    <div className="min-h-screen bg-white">
+      <div className="max-w-2xl mx-auto px-4 pt-16 text-center">
+        <h1 className="text-3xl font-bold tracking-tight text-black sm:text-4xl mb-2">
+          Open Repo Wiki
+        </h1>
+        <p className="text-lg text-gray-500 mb-8">为任意 Git 仓库即时生成中文文档。</p>
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (searching) return;            // prevent duplicate submits while searching
+            setQuery(searchInput.trim());
+          }}
+          className="relative"
+        >
+          <input
+            type="text"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="搜索仓库(名称、路径或介绍)…"
+            disabled={searching}
+            className="w-full rounded-full border border-gray-300 py-4 pl-6 pr-16 text-lg outline-none focus:border-black focus:ring-0 disabled:bg-gray-50"
+            style={{ boxShadow: '0 0 15px rgba(0,0,0,0.1)' }}
+          />
+          <button
+            type="submit"
+            disabled={searching}
+            className="absolute right-2 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center rounded-full bg-black text-white hover:bg-gray-800 disabled:bg-gray-300 disabled:cursor-not-allowed"
+            aria-label="搜索"
+          >
+            {searching ? (
+              <svg className="h-5 w-5 animate-spin" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+            ) : (
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M11 18a7 7 0 100-14 7 7 0 000 14z" />
+              </svg>
+            )}
+          </button>
+        </form>
+      </div>
+
+      <div className="max-w-7xl mx-auto px-4 pt-10 pb-20">
+        {error && (
+          <div className="mb-4 rounded-md bg-red-50 p-3 border border-red-100 text-sm text-red-700">
+            {error}
+          </div>
+        )}
+        <RepoTable query={query} onView={handleView} onGenerate={handleGenerate} onLoadingChange={setSearching} />
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -192,7 +250,7 @@ function RepoPage() {
         onNavigate={handleNavigate}
         onGoToRoot={handleGoToRoot}
       />
-      <div className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 overflow-hidden">
+      <div className="flex-1 max-w-full mx-auto w-full overflow-hidden">
         <div className="flex flex-col lg:grid lg:grid-cols-12 lg:gap-8 h-full overflow-hidden">
           <TreeBrowser
             repoId={repoId}

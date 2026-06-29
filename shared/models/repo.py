@@ -24,6 +24,7 @@ class Repo:
     forks: int = 0
     language: Optional[str] = None
     github_url: Optional[str] = None
+    description: Optional[str] = None
     created_at: Optional[str] = None
 
     @staticmethod
@@ -57,6 +58,8 @@ class Repo:
             item["language"] = self.language
         if self.github_url is not None:
             item["github_url"] = self.github_url
+        if self.description is not None:
+            item["description"] = self.description
         if self.created_at is not None:
             item["created_at"] = self.created_at
         return item
@@ -69,10 +72,12 @@ class Repo:
             owner=item["owner"],
             name=item["name"],
             default_branch=item["default_branch"],
-            stars=item.get("stars", 0),
-            forks=item.get("forks", 0),
+            # DynamoDB returns numbers as Decimal; cast for JSON serialization.
+            stars=int(item.get("stars", 0)),
+            forks=int(item.get("forks", 0)),
             language=item.get("language"),
             github_url=item.get("github_url"),
+            description=item.get("description"),
             created_at=item.get("created_at"),
         )
 
@@ -90,6 +95,8 @@ class Repo:
             result["language"] = self.language
         if self.github_url is not None:
             result["githubUrl"] = self.github_url
+        if self.description is not None:
+            result["description"] = self.description
         if self.created_at is not None:
             result["createdAt"] = self.created_at
         return result
@@ -106,5 +113,6 @@ class Repo:
             forks=data.get("forks", 0),
             language=data.get("language"),
             github_url=data.get("githubUrl"),
+            description=data.get("description"),
             created_at=data.get("createdAt"),
         )

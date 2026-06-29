@@ -1,4 +1,4 @@
-export { RepoForm } from './RepoForm';
+export { RepoTable } from './RepoTable';
 export { ProgressView } from './ProgressView';
 export type { Job, JobStatus, JobStage } from './ProgressView';
 export { TreeBrowser } from './TreeBrowser';

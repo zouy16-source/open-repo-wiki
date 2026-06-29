@@ -17,7 +17,7 @@ import os
 import traceback
 
 from services.api.handlers.jobs import create_job, get_job
-from services.api.handlers.repos import get_tree, get_page
+from services.api.handlers.repos import get_tree, get_page, list_repos, list_source_projects
 
 
 def jobs_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
@@ -82,8 +82,14 @@ def repos_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         
         if http_method != "GET":
             return _method_not_allowed(http_method)
-        
+
         # Route based on resource path
+        if "/sources/projects" in resource:
+            response = list_source_projects(event, context)
+            return response
+        if resource.rstrip("/") == "/repos":
+            response = list_repos(event, context)
+            return response
         if "/tree" in resource:
             response = get_tree(event, context)
             print(f"DEBUG_REPOS_HANDLER Response: {str(response)}")

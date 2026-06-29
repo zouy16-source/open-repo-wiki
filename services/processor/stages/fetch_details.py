@@ -144,6 +144,7 @@ class FetchDetailsStage:
             forks=repo_details.forks,
             language=repo_details.language,
             github_url=repo_details.url,
+            description=repo_details.description,
             created_at=datetime.now(timezone.utc).isoformat(),
         )
         self.dynamodb.put_repo(repo)

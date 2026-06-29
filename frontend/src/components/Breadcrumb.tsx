@@ -17,9 +17,9 @@ export function Breadcrumb({
 }: BreadcrumbProps) {
   const pathParts = currentPath ? currentPath.split('/').filter(Boolean) : [];
 
-  // Base URL for the source host links (set VITE_SOURCE_WEB_URL for GitLab /
-  // self-hosted, e.g. https://git.your-company.com). Defaults to GitHub.
-  const sourceBase = (import.meta.env.VITE_SOURCE_WEB_URL || 'https://github.com').replace(/\/+$/, '');
+  // Base URL for the source host links. Defaults to the private GitLab instance;
+  // override per-environment with VITE_SOURCE_WEB_URL.
+  const sourceBase = (import.meta.env.VITE_SOURCE_WEB_URL || 'https://git.ymdd.tech').replace(/\/+$/, '');
 
   const handlePathClick = (index: number) => {
     const path = pathParts.slice(0, index + 1).join('/');
@@ -28,10 +28,10 @@ export function Breadcrumb({
 
   return (
     <nav
-      className="flex px-4 sm:px-6 lg:px-8 py-4 border-b border-gray-200 bg-white"
+      className="flex px-4 py-4 border-b border-gray-200 bg-white"
       aria-label="Breadcrumb"
     >
-      <ol role="list" className="flex items-center space-x-4 max-w-7xl mx-auto w-full">
+      <ol role="list" className="flex items-center space-x-4 max-w-full mx-auto w-full">
         {/* Home */}
         <li>
           <div>

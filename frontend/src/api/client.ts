@@ -75,7 +75,8 @@ export interface CreateJobResult {
 export async function createJob(
   owner: string,
   repo: string,
-  branch?: string
+  branch?: string,
+  force: boolean = false
 ): Promise<CreateJobResult> {
   // Generate request signature for authorization
   const { timestamp, signature } = await generateSignature('POST', '/jobs');
@@ -97,6 +98,7 @@ export async function createJob(
       owner,
       repo,
       branch: branch || 'main',
+      force,
     }),
   });
 
@@ -217,5 +219,65 @@ export async function getPage(
     await handleErrorResponse(response);
   }
 
+  return response.json();
+}
+
+/**
+ * A repository that already has generated documentation.
+ */
+export interface GeneratedRepo {
+  repoId: string;
+  owner: string;
+  name: string;
+  defaultBranch: string;
+  stars: number;
+  forks: number;
+  language?: string;
+  description?: string;
+}
+
+/**
+ * List all generated repositories. GET /repos
+ */
+export async function listGeneratedRepos(): Promise<GeneratedRepo[]> {
+  const response = await fetch(`${API_BASE_URL}/repos`, { method: 'GET' });
+  if (!response.ok) {
+    await handleErrorResponse(response);
+  }
+  const data = await response.json();
+  return data.repos || [];
+}
+
+/**
+ * A project from the configured Git provider (e.g. GitLab).
+ */
+export interface SourceProject {
+  pathWithNamespace: string;
+  name: string;
+  description?: string;
+  defaultBranch: string;
+  starCount: number;
+  webUrl?: string;
+  lastActivityAt?: string;
+}
+
+export interface SourceProjectsResult {
+  projects: SourceProject[];
+  nextPage: number | null;
+  provider: string;
+}
+
+/**
+ * List projects from the configured Git provider. GET /sources/projects
+ */
+export async function listSourceProjects(
+  search: string,
+  page: number
+): Promise<SourceProjectsResult> {
+  const qs = `search=${encodeURIComponent(search)}&page=${page}`;
+  const response = await fetch(`${API_BASE_URL}/sources/projects?${qs}`, { method: 'GET' });
+  if (!response.ok) {
+    await handleErrorResponse(response);
+  }
   return response.json();
 }

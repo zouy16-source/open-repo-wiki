@@ -52,6 +52,11 @@ services:
       DDB_JOBS_TABLE: OpenRepoWikiJobs
       S3_BUCKET: openrepowiki-artifacts-dev
       # STATE_MACHINE_ARN intentionally unset -> POST /jobs skips Step Functions.
+    env_file:
+      # GITLAB_TOKEN / GITLAB_URL / REPO_PROVIDER / LLM_* / OUTPUT_LANGUAGE — used by
+      # GET /sources/projects and the processor spawned in the background on POST /jobs.
+      - path: local/.env.local
+        required: false
     ports:
       - "8000:8000"
     volumes:
